@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<title>WT 战术地图</title>
+<style>
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:#080b09; color:#cfe8c8; overflow:hidden;
+              font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif; }
+  #top { height:26px; display:flex; align-items:center; gap:6px; padding:0 8px; font-size:12px;
+         background:#0a0f0b; border-bottom:1px solid #1a241a; white-space:nowrap; }
+  .tag { padding:1px 7px; border-radius:10px; border:1px solid #24331f; background:#0f160f; }
+  #app { display:flex; height:calc(100% - 26px); }
+
+  /* 左列：上面设置，下面姿态仪 */
+  #colL { width:31%; flex:0 0 31%; display:flex; flex-direction:column; border-right:1px solid #141d14; min-width:0; }
+  #settings { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:8px; border-bottom:1px solid #141d14; }
+  #settings button { background:rgba(0,0,0,.55); color:#cfe8c8; border:1px solid rgba(140,180,140,.3);
+                     border-radius:9px; padding:11px 4px; font-size:13px; font-family:inherit; }
+  #settings button.off { color:#55705a; border-color:rgba(120,150,120,.15); }
+  #adiWrap { flex:1; position:relative; min-height:0; }
+  #adi { display:block; width:100%; height:100%; }
+
+  /* 中间：地图 */
+  #colM { flex:1; position:relative; min-width:0; }
+  #map { display:block; width:100%; height:100%; touch-action:none; }
+  #feed { position:absolute; left:5px; bottom:4px; right:5px; font-size:10.5px; line-height:1.4;
+          color:#a8bda2; pointer-events:none; text-shadow:0 1px 2px #000; }
+  .cal { display:none; position:absolute; top:8px; left:8px; z-index:9; background:rgba(6,10,8,.96);
+         border:1px solid #2a3a26; border-radius:10px; padding:7px 8px; font-size:12px; }
+  .cal.on { display:block; }
+  .calrow { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+  .calrow span { width:34px; opacity:.65; font-size:11px; }
+  .calrow button { background:#121a12; color:#cfe8c8; border:1px solid #33502c; border-radius:7px;
+                   padding:8px 12px; font-size:13px; font-family:inherit; min-width:42px; }  #linkDown { position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+              justify-content:center; gap:12px; pointer-events:none; text-align:center;
+              font-family:SimSun,"宋体","Songti SC",serif; }
+  #linkDown.on { display:flex; }
+  #linkDown .big { font-size:clamp(22px,3.6vw,52px); letter-spacing:10px; color:rgba(150,200,145,.30); }
+  #linkDown .sub { font-size:clamp(12px,1.4vw,20px); letter-spacing:6px; color:rgba(150,200,145,.22); }
+  .nolink { font-family:SimSun,"宋体","Songti SC",serif; font-size:12.5px; letter-spacing:2px;
+            color:rgba(190,220,185,.35); padding:8px 4px; text-align:center; }
+  #demoMark { position:absolute; left:0; right:0; top:50%; display:none; text-align:center;
+              font-family:SimSun,"宋体","Songti SC",serif; font-size:clamp(16px,2.6vw,32px);
+              letter-spacing:12px; color:rgba(255,255,255,.26); transform:rotate(-16deg);
+              pointer-events:none; }
+  #demoMark.on { display:block; }  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+          text-align:center; font-size:12px; color:#7f9a7a; pointer-events:none; }
+
+  /* 右列：敌 / 友 */
+  #colR { width:25%; flex:0 0 25%; display:flex; border-left:1px solid #141d14; min-width:0; }
+  .col { flex:1 1 50%; display:flex; flex-direction:column; min-width:0; padding:3px 4px; }
+  .col.enemy { border-right:1px solid #141d14; }
+  .col h3 { margin:2px 0 4px; font-size:11px; letter-spacing:1px; }
+  .col.enemy h3 { color:#8ee37a; }
+  .col.ally h3 { color:#c08bff; }
+  .row { display:flex; gap:4px; padding:2px 4px; border-radius:4px; background:#0d140e;
+         margin-bottom:2px; font-size:11px; white-space:nowrap; overflow:hidden; }
+  .row.enemy { border-left:3px solid #e33; }
+  .row.ally { border-left:3px solid #39f; }
+  .row .i { opacity:.45; width:11px; flex:0 0 11px; }
+  .row .t { flex:1; overflow:hidden; text-overflow:ellipsis; }
+</style>
+</head>
+<body>
+<div id="top">
+  <span class="tag" id="st">连接中…</span>
+  <span class="tag" id="mode"></span>
+  <span class="tag" id="t-red" style="color:#ff6b6b">敌机 0</span>
+  <span class="tag" id="t-blue" style="color:#6cb6ff">友机 0</span>
+  <span class="tag" id="t-gnd">地面 0</span>
+  <span class="tag" id="t-ammo">弹药 0</span>
+  <span class="tag" id="t-zone" style="color:#ff6b6b">战区 0</span>
+</div>
+
+<div id="app">
+  <div id="colL">
+    <div id="settings">
+      <button id="b-bg">底图</button>
+      <button id="b-grid">网格</button>
+      <button id="b-follow">跟随</button>
+      <button id="b-flip">Y翻转</button>
+      <button id="b-pflip">俯仰反向</button>
+      <button id="b-rflip">滚转反向</button>
+      <button id="b-hz">10Hz</button>
+      <button id="b-pause">暂停</button>
+      <button id="b-reset">复位</button>
+      <button id="b-calA">仪校准</button>
+      <button id="b-calM">图校准</button>
+      <button id="b-demo">演示开</button>
+    </div>
+    <div id="adiWrap"><canvas id="adi"></canvas>
+      <div id="demoMark">演示模式</div>
+      <div id="calA" class="cal">
+        <div class="calrow"><span>俯仰</span><button data-cal="p-">−</button><button data-cal="p+">+</button></div>
+        <div class="calrow"><span>滚转</span><button data-cal="r-">−</button><button data-cal="r+">+</button></div>
+        <div class="calrow"><span>单位</span><button id="calUnit">度</button></div>
+        <div class="calrow"><button id="calResetA">复位</button></div>
+      </div>
+    </div>  </div>
+
+  <div id="colM">
+    <canvas id="map"></canvas>
+    <div id="calM" class="cal">
+      <div class="calrow"><span>地图</span><button data-cal="my-">↑</button><button data-cal="my+">↓</button></div>
+      <div class="calrow"><span>左右</span><button data-cal="mx-">←</button><button data-cal="mx+">→</button></div>
+      <div class="calrow"><button id="calResetM">复位</button></div>
+    </div>
+    <div id="feed"></div>
+    <div id="linkDown"><div class="big">态势断联</div><div class="sub">请检查数据链</div></div>
+    <div id="hint">等待进入对局…</div>
+  </div>
+
+  <div id="colR">
+    <div class="col enemy"><h3>敌</h3><div id="enemy"></div></div>
+    <div class="col ally"><h3>友</h3><div id="ally"></div></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const mapCv = $('map'), mctx = mapCv.getContext('2d');
+const adiCv = $('adi'), actx = adiCv.getContext('2d');
+
+const NUM = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
+const TYPEMAP = {
+  fighter:'战斗机', assault:'攻击机', bomber:'轰炸机', heli:'直升机', helicopter:'直升机',
+  artillery:'火炮', tank:'坦克', spaa:'防空车', aaa:'高炮', ship:'舰船', boat:'舰船',
+  player:'自己', none:'未知', mediumtank:'中坦', heavytank:'重坦', lighttank:'轻坦',
+  ifv:'步战车', wheeled:'轮式', sam:'防空导弹', frigate:'护卫舰', missiledestroyer:'导弹驱逐舰'
+};
+
+let cal = { pOff: 0, rOff: 0, rScale: 1, mox: 0, moy: 0 };
+try { const _c = localStorage.getItem('wtcal'); if (_c) cal = Object.assign(cal, JSON.parse(_c)); } catch (e) {}
+function saveCal() { try { localStorage.setItem('wtcal', JSON.stringify(cal)); } catch (e) {} }
+function npos(v) { const p = posOf(v); if (p) { p.x += cal.mox; p.y += cal.moy; } return p; }
+let mapInfo = null, items = [], hud = [], lastOk = 0, lastGen = null;
+let view = { scale: 1, ox: 0, oy: 0 };
+let showBg = true, showGrid = true, flipY = false, follow = false, flipPitch = false, flipRoll = false;
+let bg = null, bgReady = false, bgLoaded = false, lastBgTry = 0;
+let zp = 1, lastPanel = '', lastFeed = '', maxDmgId = 0, lastZones = null;
+let failSince = 0, lastReload = 0, paused = false, pollMs = 100;
+let lastInfoAt = 0, lastHudAt = 0, lastStateAt = 0, lastIndAt = 0;
+let st8 = null, ind8 = null, haveData = false, lastStat = '', demoOn = true, inBattle = false, linked = false;
+let smp = { p: 0, r: 0, h: 0, t: 0, a: 0, init: false, last: 0 };
+const usbMode = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
+const forceOffline = new URLSearchParams(location.search).get('offline') === '1';
+let instMs = usbMode ? 50 : 100;   // USB 隧道走 20Hz，Wi-Fi 保持 10Hz
+
+/* ---------------- 自适应缩放 ---------------- */
+function autoScale() {
+  const iw = window.innerWidth || 1;
+  const sw = (window.screen && window.screen.width) || 0;
+  let z = 1;
+  if (sw && sw / iw > 1.3) z = Math.min(sw / iw, 3);
+  if (Math.abs(z - zp) < 0.02) return;
+  zp = z;
+  document.documentElement.style.zoom = (z === 1 ? '' : String(z));
+  requestAnimationFrame(resizeAll);
+}
+
+/* ---------------- 尺寸 ---------------- */
+function fitCanvas(cv, ctx) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2) * zp;
+  cv.width = Math.max(1, Math.floor(cv.clientWidth * dpr));
+  cv.height = Math.max(1, Math.floor(cv.clientHeight * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function resizeAll() { fitCanvas(mapCv, mctx); fitCanvas(adiCv, actx); }
+new ResizeObserver(resizeAll).observe(mapCv);
+new ResizeObserver(resizeAll).observe(adiCv);
+
+/* ---------------- 地图数据 ---------------- */
+const toArray = o => Array.isArray(o) ? o
+  : (o && Array.isArray(o.vehicles)) ? o.vehicles
+  : (o && Array.isArray(o.map_objects)) ? o.map_objects : [];
+
+function posOf(v) {
+  let x = (typeof v.x === 'number') ? v.x : v.sx;
+  let y = (typeof v.y === 'number') ? v.y : v.sy;
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (Math.abs(x) > 2.5 || Math.abs(y) > 2.5) {
+    const i = mapInfo || {};
+    const mn = i.map_min || [-65536, -65536], mx = i.map_max || [65536, 65536];
+    x = (x - mn[0]) / ((mx[0] - mn[0]) || 1);
+    y = (y - mn[1]) / ((mx[1] - mn[1]) || 1);
+  }
+  return { x, y };
+}
+
+function kindOf(v) {
+  const s = ((v.type || '') + ' ' + (v.icon || '')).toLowerCase();
+  if (s.includes('airfield')) return 'airfield';
+  if (s.includes('player')) return 'self';
+  if (s.includes('bombing') || s.includes('bomb_point') || s.includes('bomb_target')) return 'bomb';
+  if (/capture|cap_zone|capture_zone/.test(s)) return 'cap';
+  if (/bomb|rocket|torp|missile|shell|projectile/.test(s)) return 'ammo';
+  if (s.includes('defending')) return 'defend';
+  if (s.includes('respawn')) return 'respawn';
+  if (/fighter|bomber|assault|aircraft|heli|uav/.test(s)) return 'air';
+  if (/ship|boat|frigate|destroyer|cruiser/.test(s)) return 'ship';
+  if (/ground|tank|car|aaa|artillery|spaa|spg|ifv|wheeled|sam/.test(s)) return 'ground';
+  return 'other';
+}
+function colorOf(v) {
+  const c = v.color || '';
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+  if (Array.isArray(v['color[]'])) return 'rgb(' + v['color[]'].join(',') + ')';
+  return '#ffcc00';
+}
+function teamOf(v) {
+  const c = Array.isArray(v['color[]']) ? v['color[]'] : null;
+  let r = 0, g = 0, b = 0;
+  if (c) { r = c[0]; g = c[1]; b = c[2]; }
+  else if (/^#[0-9a-f]{6}$/i.test(v.color || '')) {
+    r = parseInt(v.color.slice(1, 3), 16); g = parseInt(v.color.slice(3, 5), 16); b = parseInt(v.color.slice(5, 7), 16);
+  }
+  if (r > 150 && r > b + 50) return 'red';
+  if (b > 150 && b > r + 50) return 'blue';
+  return 'other';
+}
+const typeName = v => TYPEMAP[(v.icon || '').toLowerCase()] || (v.icon || '未知');
+
+/* ---------------- 底图 ---------------- */
+async function loadBg() {
+  if (bgLoaded || Date.now() - lastBgTry < 4000) return;
+  lastBgTry = Date.now(); bgLoaded = true;
+  try {
+    const r = await fetch('/api/map.img?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('x');
+    const blob = await r.blob();
+    if (blob.size < 40000) { bgLoaded = false; return; }
+    const im = new Image();
+    im.onload = () => { if (im.naturalWidth > 64) { bg = im; bgReady = true; } else bgLoaded = false; };
+    im.onerror = () => { bgLoaded = false; };
+    im.src = URL.createObjectURL(blob);
+  } catch (e) { bgLoaded = false; }
+}
+
+/* ---------------- 地图绘制 ---------------- */
+function geom() {
+  const W = mapCv.clientWidth, H = mapCv.clientHeight, pad = 4;
+  const side = (Math.min(W, H) - pad * 2) * view.scale;
+  return { W, H, side, ox: (W - side) / 2 + view.ox, oy: (H - side) / 2 + view.oy };
+}
+const GX = (g, nx) => g.ox + nx * g.side;
+const GY = (g, ny) => flipY ? g.oy + (1 - ny) * g.side : g.oy + ny * g.side;
+
+function drawSelfArrow(p, hdgDeg) {
+  const g = geom();
+  const px = GX(g, p.x), py = GY(g, p.y);
+  // 以"重心"为旋转中心：形状画好后再平移，使质心正好落在机位点上
+  const Wd = 10, TIP = -26, BASE = 10, NOTCH = 4, CENTROID = 4;
+  mctx.save();
+  mctx.translate(px, py);
+  mctx.rotate((flipY ? -hdgDeg : hdgDeg) * Math.PI / 180);
+  mctx.translate(0, CENTROID);
+  mctx.beginPath();
+  mctx.moveTo(0, TIP);
+  mctx.lineTo(Wd, BASE);
+  mctx.lineTo(0, NOTCH);
+  mctx.lineTo(-Wd, BASE);
+  mctx.closePath();
+  mctx.fillStyle = '#ffffff';
+  mctx.fill();
+  mctx.lineWidth = 1.6;
+  mctx.strokeStyle = 'rgba(0,0,0,.85)';
+  mctx.stroke();
+  mctx.beginPath(); mctx.arc(0, 0, 2.3, 0, 7);
+  mctx.fillStyle = '#111'; mctx.fill();
+  mctx.restore();
+}
+
+function dot(g, p, r, color, ring) {
+  const px = GX(g, p.x), py = GY(g, p.y);
+  mctx.beginPath(); mctx.arc(px, py, r, 0, 7);
+  mctx.fillStyle = color; mctx.fill();
+  mctx.lineWidth = 1.2; mctx.strokeStyle = 'rgba(0,0,0,.85)'; mctx.stroke();
+  if (ring) {
+    mctx.beginPath(); mctx.arc(px, py, r + 2.5, 0, 7);
+    mctx.strokeStyle = 'rgba(255,255,255,.55)'; mctx.lineWidth = 1; mctx.stroke();
+  }
+}
+
+function drawMap() {
+  if (follow) {
+    const me = items.find(v => kindOf(v) === 'self');
+    const p = me && posOf(me);
+    if (p) {
+      const W = mapCv.clientWidth, H = mapCv.clientHeight, pad = 4;
+      const side = (Math.min(W, H) - pad * 2) * view.scale;
+      view.ox = side * (0.5 - p.x);
+      view.oy = side * (flipY ? (p.y - 0.5) : (0.5 - p.y));
+    }
+  }
+
+  const g = geom();
+  mctx.clearRect(0, 0, g.W, g.H);
+  mctx.fillStyle = '#080b09'; mctx.fillRect(0, 0, g.W, g.H);
+
+  if (showBg && bgReady) mctx.drawImage(bg, g.ox, g.oy, g.side, g.side);
+
+  if (showGrid) {
+    mctx.strokeStyle = (showBg && bgReady) ? 'rgba(255,255,255,.09)' : 'rgba(120,170,120,.16)';
+    mctx.lineWidth = 1; mctx.beginPath();
+    for (let i = 0; i <= 10; i++) {
+      const p = g.ox + g.side * i / 10, q = g.oy + g.side * i / 10;
+      mctx.moveTo(p, g.oy); mctx.lineTo(p, g.oy + g.side);
+      mctx.moveTo(g.ox, q); mctx.lineTo(g.ox + g.side, q);
+    }
+    mctx.stroke();
+  }
+  mctx.strokeStyle = 'rgba(140,200,140,.30)'; mctx.lineWidth = 1.5;
+  mctx.strokeRect(g.ox, g.oy, g.side, g.side);
+
+  mctx.save();
+  mctx.shadowColor = 'rgba(0,0,0,.9)'; mctx.shadowBlur = 3;
+  for (const v of items) {
+    const k = kindOf(v), p = npos(v);
+    if (!p) continue;
+
+    if (k === 'airfield') {
+      const e = npos({ x: v.ex, y: v.ey });
+      mctx.strokeStyle = colorOf(v); mctx.lineWidth = 3; mctx.globalAlpha = .85;
+      mctx.beginPath(); mctx.moveTo(GX(g, p.x), GY(g, p.y));
+      if (e) mctx.lineTo(GX(g, e.x), GY(g, e.y));
+      mctx.stroke(); mctx.globalAlpha = 1;
+      continue;
+    }
+
+    if (k === 'bomb' || k === 'defend' || k === 'cap') {
+      const px = GX(g, p.x), py = GY(g, p.y);
+      const t = teamOf(v), c = colorOf(v);
+      const contested = NUM(v.blink, 0) === 1;
+      const pulse = contested ? 0.30 + 0.70 * Math.abs(Math.sin(Date.now() / 240)) : 1;
+      const r = (k === 'cap') ? 10 : 13;
+      mctx.save();
+      mctx.globalAlpha = pulse;
+      mctx.beginPath(); mctx.arc(px, py, r, 0, 7);
+      mctx.lineWidth = 2.6; mctx.strokeStyle = c; mctx.stroke();
+      if (t !== 'other') { mctx.globalAlpha = pulse * 0.22; mctx.fillStyle = c; mctx.fill(); }
+      mctx.globalAlpha = 1;
+      const pct = NUM(v.health, NUM(v.hp, NUM(v.progress, NUM(v.percent, NaN))));
+      if (isFinite(pct) && pct >= 0) {
+        const a = Math.max(0, Math.min(1, pct > 1 ? pct / 100 : pct));
+        mctx.beginPath(); mctx.arc(px, py, r + 4, -Math.PI / 2, -Math.PI / 2 + a * Math.PI * 2);
+        mctx.lineWidth = 3; mctx.strokeStyle = '#ffd24f'; mctx.stroke();
+      }
+      if (k === 'cap') { mctx.beginPath(); mctx.arc(px, py, 2.2, 0, 7); mctx.fillStyle = c; mctx.fill(); }
+      mctx.restore();
+      continue;
+    }
+
+    if (k === 'respawn') continue;
+    if (k === 'ammo') { dot(g, p, 2.3, '#ffe36b', false); continue; }
+    if (k === 'air') { dot(g, p, 5, colorOf(v), true); continue; }
+    if (k === 'ship') { dot(g, p, 6, colorOf(v), true); continue; }
+    dot(g, p, 3.2, colorOf(v), false);
+  }
+  mctx.restore();
+
+  const me = items.find(v => kindOf(v) === 'self');
+  if (me) {
+    const p = npos(me);
+    if (p) {
+      let hdg2 = NUM(ind8 && (ind8.compass !== undefined ? ind8.compass : ind8.compass1), NaN);
+      if (!isFinite(hdg2)) {
+        const dx = NUM(me.dx, 0), dy = NUM(me.dy, 0);
+        if (dx || dy) hdg2 = ((Math.atan2(dx, flipY ? dy : -dy) * 180 / Math.PI) + 360) % 360;
+      }
+      if (isFinite(hdg2)) drawSelfArrow(p, hdg2); else dot(g, p, 6, '#fff', true);
+    }
+  }
+
+  mctx.fillStyle = 'rgba(200,230,200,.35)'; mctx.font = '10px system-ui';
+  mctx.fillText('N ↑', g.W - 24, 12);
+}
+
+/* ---------------- 姿态仪 ---------------- */
+function drawTape(ctx, x, y, w, h, value, step, labelStep, unit, sup, sub) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  ctx.fillStyle = 'rgba(10,16,12,.94)'; ctx.fillRect(x, y, w, h);
+
+  const cy = y + h / 2;
+  const pxPer = h / (step * 10);
+  const v0 = Math.round(value / step) * step;
+  for (let k = -5; k <= 5; k++) {
+    const v = v0 + k * step;
+    if (v < 0) continue;
+    const py = cy - (v - value) * pxPer;
+    if (py < y - 14 || py > y + h + 14) continue;
+    const major = (Math.abs(v % labelStep) < 0.001);
+    ctx.strokeStyle = 'rgba(200,230,200,.5)';
+    ctx.lineWidth = major ? 1.5 : 1;
+    ctx.beginPath(); ctx.moveTo(x + w - (major ? 12 : 7), py); ctx.lineTo(x + w, py); ctx.stroke();
+    if (major) {
+      ctx.fillStyle = 'rgba(215,235,210,.85)'; ctx.font = '10px system-ui';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(v), x + w - 15, py);
+    }
+  }
+  ctx.restore();
+
+  // 当前值框
+  const bh = Math.max(24, Math.min(46, h * 0.09)), bw = w - 8;
+  const bx = x + 4, by = cy - bh / 2;
+  ctx.fillStyle = '#0b0f0c';
+  ctx.strokeStyle = '#cfe8c8'; ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 5); else ctx.rect(bx, by, bw, bh);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold ' + Math.round(Math.min(bh * 0.56, bw * 0.33)) + 'px system-ui';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(Math.round(value)), bx + bw / 2, by + bh / 2);
+
+  // 单位
+  ctx.fillStyle = 'rgba(200,230,200,.55)'; ctx.font = '9px system-ui';
+  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  ctx.fillText(unit, x + w / 2, y + 3);
+
+  // 框上方（地速）与下方（马赫）的小字
+  ctx.textAlign = 'center';
+  if (sup) {
+    ctx.fillStyle = '#9fe08a';
+    ctx.font = 'bold 11px system-ui';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(sup, bx + bw / 2, by - 4);
+  }
+  if (sub) {
+    ctx.fillStyle = 'rgba(190,220,185,.9)';
+    ctx.font = 'bold 11px system-ui';
+    ctx.textBaseline = 'top';
+    ctx.fillText(sub, bx + bw / 2, by + bh + 4);
+  }
+}
+
+function drawHeading(y, h, hdg) {
+  const W = adiCv.clientWidth;
+  const x = 4, w = W - 8;
+  actx.save();
+  actx.beginPath(); actx.rect(x, y, w, h); actx.clip();
+  actx.fillStyle = 'rgba(10,16,12,.94)'; actx.fillRect(x, y, w, h);
+
+  const cxh = x + w / 2;
+  const ppd = w / 90;                       // 可视范围 ±45°
+  for (let d = -45; d <= 45; d += 5) {
+    const val = ((Math.round(hdg) + d) % 360 + 360) % 360;
+    const px = cxh + d * ppd;
+    const major = (d % 15 === 0);
+    actx.strokeStyle = 'rgba(200,230,200,.55)';
+    actx.lineWidth = major ? 1.6 : 1;
+    actx.beginPath();
+    actx.moveTo(px, y + h - (major ? 13 : 8));
+    actx.lineTo(px, y + h);
+    actx.stroke();
+    if (d % 30 === 0) {
+      const lab = val === 0 ? 'N' : val === 90 ? 'E' : val === 180 ? 'S' : val === 270 ? 'W' : String(Math.round(val / 10)).padStart(2, '0');
+      actx.fillStyle = 'rgba(215,235,210,.9)';
+      actx.font = '10px system-ui';
+      actx.textAlign = 'center'; actx.textBaseline = 'bottom';
+      actx.fillText(lab, px, y + h - 15);
+    }
+  }
+  actx.beginPath();
+  actx.moveTo(cxh, y + h - 1);
+  actx.lineTo(cxh - 5, y + h + 5);
+  actx.lineTo(cxh + 5, y + h + 5);
+  actx.closePath();
+  actx.fillStyle = '#f5c542'; actx.fill();
+  actx.lineWidth = 1.2; actx.strokeStyle = '#111'; actx.stroke();
+
+  // 航向数值：和速度/高度一样用框
+  const bw = Math.min(66, w * 0.42), bh2 = Math.max(20, h * 0.42);
+  const bx = cxh - bw / 2, by2 = y + 3;
+  actx.fillStyle = '#0b0f0c';
+  actx.strokeStyle = '#cfe8c8'; actx.lineWidth = 1.8;
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(bx, by2, bw, bh2, 5); else actx.rect(bx, by2, bw, bh2);
+  actx.fill(); actx.stroke();
+  actx.fillStyle = '#fff';
+  actx.font = 'bold ' + Math.round(Math.min(bh2 * 0.62, bw * 0.30)) + 'px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText(String(Math.round(hdg)).padStart(3, '0'), bx + bw / 2, by2 + bh2 / 2);
+  actx.restore();
+}
+
+function drawPFD() {
+  const W = adiCv.clientWidth, H = adiCv.clientHeight;
+  actx.clearRect(0, 0, W, H);
+  actx.fillStyle = '#070a08'; actx.fillRect(0, 0, W, H);
+
+  let ias = 0, tas = 0, gs = 0, alt = 0, mach = 0, aoa = 0, aos = 0, g = 0, vy = 0, pitch = 0, roll = 0, hdg = 0, thr = 0;
+  const t = performance.now() / 1000;
+  if (demoOn && !haveData && !inBattle) {
+    ias = 560 + Math.sin(t * 0.8) * 70;
+    tas = ias * 1.03;
+    gs = tas * 1.01;
+    alt = 3200 + Math.sin(t * 0.5) * 420;
+    mach = 0.55 + Math.sin(t * 0.8) * 0.12;
+    aoa = 4 + Math.sin(t * 1.3) * 3;
+    aos = Math.sin(t * 0.7) * 3;
+    thr = 85 + Math.sin(t * 0.45) * 20;
+    g = 1 + Math.sin(t * 1.1) * 2.2;
+    vy = Math.cos(t * 0.5) * 12;
+    pitch = Math.sin(t * 0.9) * 18;
+    roll = Math.sin(t * 0.6) * 32;
+    hdg = (t * 22) % 360;
+  } else {
+    ias = NUM(st8 && st8['IAS, km/h'], 0);
+    tas = NUM(st8 && st8['TAS, km/h'], ias);
+    gs = NaN;
+    for (const kk in (st8 || {})) { if ((kk === 'GS, km/h' || /^ground/i.test(kk)) && typeof st8[kk] === 'number') { gs = st8[kk]; break; } }
+    if (!isFinite(gs)) gs = tas;
+    alt = NUM(st8 && st8['H, m'], 0);
+    mach = NUM(st8 && st8['M'], 0);
+    aoa = NUM(st8 && st8['AoA, deg'], 0);
+    aos = NUM(st8 && st8['AoS, deg'], 0);
+    thr = Math.max(NUM(st8 && st8['throttle 1, %'], 0), NUM(st8 && st8['throttle 2, %'], 0));
+    g = NUM(st8 && st8['Ny'], 0);
+    vy = NUM(st8 && st8['Vy, m/s'], 0);
+    pitch = -(NUM(ind8 && ind8.aviahorizon_pitch, 0) * cal.rScale) + cal.pOff;
+    roll = -(NUM(ind8 && (ind8.aviahorizon_roll !== undefined ? ind8.aviahorizon_roll : ind8.bank), 0) * cal.rScale) + cal.rOff;
+    hdg = NUM(ind8 && (ind8.compass !== undefined ? ind8.compass : ind8.compass1), 0);
+  }
+  if (flipPitch) pitch = -pitch;
+  if (flipRoll) roll = -roll;
+
+  // 数据每 100ms 才来一次，但屏幕 60fps —— 这里做指数平滑，让指针连续运动而不是跳格
+  const nowMs = performance.now();
+  let dtm = smp.last ? (nowMs - smp.last) / 1000 : 0.016;
+  smp.last = nowMs;
+  if (dtm > 0.2) dtm = 0.016;
+  const kk2 = 1 - Math.exp(-dtm / 0.035);
+  if (!smp.init) { smp.p = pitch; smp.r = roll; smp.h = hdg; smp.init = true; }
+  smp.p += (pitch - smp.p) * kk2;
+  let dr2 = ((roll - smp.r + 540) % 360) - 180;
+  smp.r += dr2 * kk2;
+  let dh2 = ((hdg - smp.h + 540) % 360) - 180;
+  smp.h += dh2 * kk2;
+  pitch = smp.p; roll = smp.r; hdg = (smp.h % 360 + 360) % 360;
+  if (!smp.init2) { smp.t = ias; smp.a = alt; smp.init2 = true; }
+  else { smp.t += (ias - smp.t) * kk2; smp.a += (alt - smp.a) * kk2; }
+  ias = smp.t;
+  alt = smp.a;
+
+  const tapeW = Math.max(44, Math.min(96, W * 0.26));
+  const footH = Math.max(34, H * 0.075);
+  const hdgH0 = Math.max(28, H * 0.062);
+  const adiW = Math.max(80, W - tapeW * 2 - 12);
+  const adiH = Math.max(90, H - 6 - 8 - footH - hdgH0 - 4);
+  const adiX = (W - adiW) / 2;
+  const adiY = 6;
+
+  // 两侧带（与姿态仪等高，底部给读数和航向带留位置）
+  const tapeY = 6, tapeH = adiH;
+  drawTape(actx, 2, tapeY, tapeW - 4, tapeH, ias, 20, 100, 'km/h', 'GS ' + Math.round(gs), 'M ' + mach.toFixed(2));
+  drawTape(actx, W - tapeW + 2, tapeY, tapeW - 4, tapeH, alt, 50, 250, 'm', '', '');
+
+  // ---- ADI ----
+  const cx = adiX + adiW / 2, cy = adiY + adiH / 2;
+  const R = Math.min(adiW, adiH) / 2;
+  const ppd = (adiH / 2) / 60;
+  const rad = -roll * Math.PI / 180;
+
+  actx.save();
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(adiX, adiY, adiW, adiH, Math.min(adiW, adiH) * 0.07);
+  else actx.rect(adiX, adiY, adiW, adiH);
+  actx.clip();
+
+  actx.save();
+  actx.translate(cx, cy);
+  actx.rotate(rad);
+  const off = pitch * ppd;
+  actx.translate(0, off);
+
+  const big = R * 3;
+  actx.fillStyle = '#1f6ad0';
+  actx.fillRect(-big, -big, big * 2, big);
+  actx.fillStyle = '#8a5a1c';
+  actx.fillRect(-big, 0, big * 2, big);
+
+  actx.strokeStyle = '#ffffff'; actx.lineWidth = 2.6;
+  actx.beginPath(); actx.moveTo(-big, 0); actx.lineTo(big, 0); actx.stroke();
+
+  actx.font = 'bold ' + Math.max(9, Math.round(R * 0.075)) + 'px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  for (let p = -85; p <= 85; p += 5) {
+    if (p === 0) continue;
+    const yy = -p * ppd;
+    if (Math.abs(yy) > big) continue;
+    const major = (p % 10 === 0);
+    const halfLen = major ? R * 0.40 : R * 0.18;
+    const gap = R * 0.075;
+    actx.strokeStyle = 'rgba(255,255,255,.95)';
+    actx.lineWidth = major ? 2 : 1.4;
+    actx.beginPath();
+    actx.moveTo(-halfLen, yy); actx.lineTo(-gap, yy);
+    actx.moveTo(gap, yy); actx.lineTo(halfLen, yy);
+    actx.stroke();
+    if (major) {
+      actx.fillStyle = '#fff';
+      actx.fillText(String(Math.abs(p)), -halfLen - 11, yy);
+      actx.fillText(String(Math.abs(p)), halfLen + 11, yy);
+    }
+  }
+  actx.restore();
+
+  // 固定飞机符号
+  actx.save();
+  actx.translate(cx, cy);
+  const S = Math.min(adiW * 0.46, R * 0.92);
+  actx.beginPath();
+  actx.moveTo(-S * 0.42, 0); actx.lineTo(-S * 0.22, 0); actx.lineTo(-S * 0.10, 6);
+  actx.lineTo(-S * 0.10, 12); actx.lineTo(0, 12); actx.lineTo(S * 0.10, 12);
+  actx.lineTo(S * 0.10, 6); actx.lineTo(S * 0.22, 0); actx.lineTo(S * 0.42, 0);
+  actx.lineTo(S * 0.42, 4); actx.lineTo(S * 0.22, 4); actx.lineTo(S * 0.12, 10);
+  actx.lineTo(S * 0.12, 14); actx.lineTo(-S * 0.12, 14); actx.lineTo(-S * 0.12, 10);
+  actx.lineTo(-S * 0.22, 4); actx.lineTo(-S * 0.42, 4);
+  actx.closePath();
+  actx.fillStyle = '#f5c542'; actx.fill();
+  actx.lineWidth = 2.4; actx.strokeStyle = '#111'; actx.stroke();
+  actx.beginPath(); actx.arc(0, 0, 3, 0, 7); actx.fillStyle = '#111'; actx.fill();
+  actx.restore();
+
+  // 滚转刻度
+  const rS = Math.min(adiW * 0.42, adiH * 0.30);
+  const cyR = Math.max(adiY + 10 + rS, cy - adiH * 0.30);
+  actx.save();
+  actx.translate(cx, cyR);
+  actx.strokeStyle = 'rgba(255,255,255,.85)'; actx.lineWidth = 2;
+  actx.beginPath(); actx.arc(0, 0, rS, -Math.PI * 0.86, -Math.PI * 0.14); actx.stroke();
+  for (const a of [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60]) {
+    const ang = -Math.PI / 2 + a * Math.PI / 180;
+    const r1 = rS, r2 = rS + (a % 30 === 0 ? 10 : 6);
+    actx.beginPath();
+    actx.moveTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
+    actx.lineTo(Math.cos(ang) * r2, Math.sin(ang) * r2);
+    actx.lineWidth = (a % 30 === 0) ? 2 : 1.1;
+    actx.stroke();
+  }
+  actx.rotate(-roll * Math.PI / 180);
+  actx.beginPath();
+  actx.moveTo(0, -rS + 1);
+  actx.lineTo(-6, -rS - 10);
+  actx.lineTo(6, -rS - 10);
+  actx.closePath();
+  actx.fillStyle = '#f5c542'; actx.fill();
+  actx.lineWidth = 1.4; actx.strokeStyle = '#111'; actx.stroke();
+  actx.restore();
+
+  actx.restore();
+
+  actx.strokeStyle = 'rgba(150,190,150,.3)'; actx.lineWidth = 1.5;
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(adiX, adiY, adiW, adiH, Math.min(adiW, adiH) * 0.07);
+  else actx.rect(adiX, adiY, adiW, adiH);
+  actx.stroke();
+
+  // 底部读数
+  actx.fillStyle = 'rgba(205,232,200,.85)';
+  actx.font = '11px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'top';
+  // 左上角：节流阀百分比
+  const tx = adiX + 7, ty = adiY + 7;
+  const tTxt = '节流 ' + Math.round(thr) + '%';
+  actx.font = 'bold 11px system-ui';
+  const tw = actx.measureText(tTxt).width + 12;
+  actx.fillStyle = 'rgba(6,10,8,.72)';
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(tx, ty, tw, 18, 5); else actx.rect(tx, ty, tw, 18);
+  actx.fill();
+  actx.strokeStyle = 'rgba(160,200,150,.45)'; actx.lineWidth = 1; actx.stroke();
+  actx.fillStyle = (thr >= 100 ? '#ffd24f' : '#d8eccf');
+  actx.textAlign = 'left'; actx.textBaseline = 'middle';
+  actx.fillText(tTxt, tx + 6, ty + 9);
+  // 读数行：左（马赫/过载）· 中（迎角）· 右（升降）
+  const rowY = adiY + adiH + 3;
+  actx.textAlign = 'center';
+  actx.textBaseline = 'top';
+
+  actx.fillStyle = '#eaf7e4';
+  actx.font = 'bold 12px system-ui';
+  actx.fillText(g.toFixed(1) + ' G', tapeW / 2, rowY + 6);
+
+  actx.fillStyle = '#ffffff';
+  actx.font = 'bold 13px system-ui';
+  actx.fillText('迎角 ' + aoa.toFixed(1) + '\u00b0', W / 2, rowY + 3);
+  actx.fillStyle = '#cfe8c8';
+  actx.font = 'bold 11px system-ui';
+  actx.fillText('侧滑 ' + aos.toFixed(1) + '\u00b0', W / 2, rowY + 19);
+
+  actx.fillStyle = '#eaf7e4';
+  actx.font = 'bold 12px system-ui';
+  actx.fillText(vy.toFixed(1), W - tapeW / 2, rowY);
+  actx.fillText('m/s', W - tapeW / 2, rowY + 15);
+
+  // 航向带贴底
+  const hdgY = rowY + footH;
+  const hdgH = Math.max(26, H - hdgY - 3);
+  drawHeading(hdgY, hdgH, hdg);
+}
+
+/* ---------------- 面板 ---------------- */
+function updatePanels() {
+  let red = 0, blue = 0, gnd = 0, ammo = 0, zones = 0;
+  const airs = [];
+  for (const v of items) {
+    const k = kindOf(v);
+    if (k === 'air') { const t = teamOf(v); if (t === 'red') red++; else if (t === 'blue') blue++; airs.push({ v, t }); }
+    else if (k === 'ground') gnd++;
+    else if (k === 'ammo') ammo++;
+    else if (k === 'bomb') zones++;
+  }
+  $('t-red').textContent = '敌机 ' + red;
+  $('t-blue').textContent = '友机 ' + blue;
+  $('t-gnd').textContent = '地面 ' + gnd;
+  $('t-ammo').textContent = '弹药 ' + ammo;
+  $('t-zone').textContent = '战区 ' + zones;
+
+  if (lastZones !== null && zones < lastZones) {
+    hud.push({ msg: '战区被摧毁 · 剩余 ' + zones, enemy: true });
+    if (hud.length > 12) hud.shift();
+  }
+  lastZones = zones;
+
+  if (!linked) {
+    const ph = '<div class="nolink">数据链中断</div>';
+    if (ph + ph !== lastPanel) { $('enemy').innerHTML = ph; $('ally').innerHTML = ph; lastPanel = ph + ph; }
+    return;
+  }
+
+  const mk = (arr, cls) => arr.length
+    ? arr.map((a, i) => '<div class="row ' + cls + '"><span class="i">' + (i + 1) + '</span><span class="t">' + typeName(a.v) + '</span></div>').join('')
+    : '<div class="row" style="opacity:.3">无</div>';
+
+  const L = mk(airs.filter(a => a.t === 'red'), 'enemy');
+  const R = mk(airs.filter(a => a.t === 'blue'), 'ally');
+  if (L + R !== lastPanel) { $('enemy').innerHTML = L; $('ally').innerHTML = R; lastPanel = L + R; }
+}
+
+function updateFeed() {
+  const rows = hud.slice(-5).reverse().map(h => '<div' + (h.enemy ? ' style="color:#ff8a80"' : '') + '>' + h.msg + '</div>').join('');
+  if (rows !== lastFeed) { $('feed').innerHTML = rows; lastFeed = rows; }
+}
+
+/* ---------------- 轮询 ---------------- */
+async function getJSON(url) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 1500);
+  try {
+    const r = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+
+async function instLoop() {
+  if (paused) { setTimeout(instLoop, 400); return; }
+  await Promise.all([
+    getJSON('/api/state').then(s => {
+      if (s) { st8 = s; haveData = (s.valid === true && typeof s['IAS, km/h'] === 'number'); }
+    }).catch(() => {}),
+    getJSON('/api/indicators').then(i => { if (i) ind8 = i; }).catch(() => {})
+  ]);
+  setTimeout(instLoop, instMs);
+}
+
+async function poll() {
+  if (paused) { setTimeout(poll, 800); return; }
+  const now = Date.now();
+  try {
+    const obj = await getJSON('/api/map_obj.json');
+    items = toArray(obj);
+    if (forceOffline) items = [];
+    inBattle = items.length > 0;
+
+    if (now - lastInfoAt > 8000) {
+      lastInfoAt = now;
+      getJSON('/api/map_info.json').then(i => { if (i) mapInfo = i; }).catch(() => {});
+    }
+    if (now - lastHudAt > 2000) {
+      lastHudAt = now;
+      getJSON('/api/hudmsg?lastEvt=0&lastDmg=0').then(hm => {
+        if (hm && Array.isArray(hm.damage)) {
+          for (const e of hm.damage) {
+            if (e.id <= maxDmgId) continue;
+            maxDmgId = e.id;
+            const msg = String(e.msg || '').replace(/\u200b/g, '');
+            if (/击落|击毁|摧毁|shot down|destroyed/i.test(msg)) {
+              hud.push({ msg: msg, enemy: !!e.enemy });
+              if (hud.length > 12) hud.shift();
+            }
+          }
+        }
+      }).catch(() => {});
+    }
+
+
+    const gen = mapInfo && mapInfo.map_generation;
+    if (gen !== undefined && gen !== lastGen) {
+      lastGen = gen; bgLoaded = false; bgReady = false; hud.length = 0; lastFeed = '';
+    }
+
+    lastOk = Date.now();
+    failSince = 0;
+    const txt = haveData ? '已连接' : (inBattle ? '观战中' : (demoOn ? '演示数据' : '等待游戏启动'));
+    if (txt !== lastStat) { $('st').textContent = txt; $('st').style.color = haveData ? '#8ee37a' : '#ffb454'; lastStat = txt; }
+    $('hint').style.display = items.length ? 'none' : 'flex';
+    if (!bgReady) loadBg();
+    linked = forceOffline ? false : (haveData || inBattle);
+    linkDown.classList.toggle('on', !linked);
+    demoMark.classList.toggle('on', !forceOffline && demoOn && !haveData && !inBattle);
+    updatePanels(); updateFeed();
+  } catch (e) {
+    linked = false;
+    if (!failSince) failSince = Date.now();
+    const t2 = !haveData ? (inBattle ? '观战中' : (demoOn ? '演示数据（游戏未运行）' : '未检测到游戏')) : ((Date.now() - lastOk > 4000) ? '已断开' : '重连中…');
+    if (t2 !== lastStat) { $('st').textContent = t2; $('st').style.color = '#ff7b6b'; lastStat = t2; }
+    $('hint').style.display = 'flex';
+    if (Date.now() - failSince > 12000 && Date.now() - lastReload > 20000) {
+      lastReload = Date.now();
+      location.reload();
+    }
+  }
+  setTimeout(poll, pollMs);
+}
+
+/* ---------------- 交互 ---------------- */
+function fit() { view = { scale: 1, ox: 0, oy: 0 }; }
+let pts = new Map(), sd = 0, ss = 1, df = null;
+mapCv.addEventListener('pointerdown', e => {
+  mapCv.setPointerCapture(e.pointerId);
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 2) { const a = [...pts.values()]; sd = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y); ss = view.scale; }
+  else df = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy };
+});
+mapCv.addEventListener('pointermove', e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pts.size === 2) {
+    const a = [...pts.values()], d = Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y);
+    if (sd > 0) view.scale = Math.max(0.6, Math.min(10, ss * d / sd));
+  } else if (df) {
+    view.ox = df.ox + (e.clientX - df.x);
+    view.oy = df.oy + (e.clientY - df.y);
+  }
+});
+function endP(e) { pts.delete(e.pointerId); if (pts.size < 2) sd = 0; if (!pts.size) df = null; }
+mapCv.addEventListener('pointerup', endP);
+mapCv.addEventListener('pointercancel', endP);
+mapCv.addEventListener('dblclick', fit);
+
+$('b-bg').onclick = e => { showBg = !showBg; e.target.classList.toggle('off', !showBg); };
+$('b-grid').onclick = e => { showGrid = !showGrid; e.target.classList.toggle('off', !showGrid); };
+$('b-follow').onclick = e => { follow = !follow; e.target.classList.toggle('off', !follow); };
+$('b-flip').onclick = e => { flipY = !flipY; e.target.classList.toggle('off', !flipY); };
+$('b-pflip').onclick = e => { flipPitch = !flipPitch; e.target.classList.toggle('off', !flipPitch); };
+$('b-rflip').onclick = e => { flipRoll = !flipRoll; e.target.classList.toggle('off', !flipRoll); };
+$('b-pause').onclick = e => { paused = !paused; e.target.classList.toggle('off', paused); };
+$('b-hz').onclick = e => {
+  pollMs = (pollMs === 100) ? 83 : (pollMs === 83 ? 200 : 100);
+  e.target.textContent = (pollMs === 83 ? '12Hz' : pollMs === 100 ? '10Hz' : '5Hz');
+};
+$('b-reset').onclick = fit;
+
+if (new URLSearchParams(location.search).get('follow') === '1') {
+  follow = true; $('b-follow').classList.remove('off');
+}
+
+function bindCal() {
+  document.querySelectorAll('[data-cal]').forEach(b => {
+    b.onclick = () => {
+      const k = b.getAttribute('data-cal');
+      if (k === 'p-') cal.pOff -= 1;
+      if (k === 'p+') cal.pOff += 1;
+      if (k === 'r-') cal.rOff -= 1;
+      if (k === 'r+') cal.rOff += 1;
+      if (k === 'mx-') cal.mox -= 0.005;
+      if (k === 'mx+') cal.mox += 0.005;
+      if (k === 'my-') cal.moy -= 0.005;
+      if (k === 'my+') cal.moy += 0.005;
+      saveCal();
+    };
+  });
+  $('calUnit').onclick = e => { cal.rScale = (cal.rScale === 1 ? 57.2958 : 1); e.target.textContent = (cal.rScale === 1 ? '度' : '弧度'); saveCal(); };
+  $('calResetA').onclick = () => { cal.pOff = 0; cal.rOff = 0; cal.rScale = 1; $('calUnit').textContent = '度'; saveCal(); };
+  $('calResetM').onclick = () => { cal.mox = 0; cal.moy = 0; saveCal(); };
+  $('b-calA').onclick = () => $('calA').classList.toggle('on');
+  $('b-calM').onclick = () => $('calM').classList.toggle('on');
+  $('b-demo').onclick = e => { demoOn = !demoOn; e.target.textContent = demoOn ? '演示开' : '演示关'; e.target.classList.toggle('off', !demoOn); };
+  $('calUnit').textContent = (cal.rScale === 1 ? '度' : '弧度');
+}
+bindCal();
+let ovLinked = null, ovDemo = null;
+const NL = '<div class="nolink">数据链中断</div>';
+function updateLinkUI() {
+  const wantDemo = demoOn && !haveData && !inBattle;
+  if (linked !== ovLinked) { ovLinked = linked; document.getElementById('linkDown').classList.toggle('on', !linked); }
+  if (wantDemo !== ovDemo) { ovDemo = wantDemo; document.getElementById('demoMark').classList.toggle('on', wantDemo); }
+  if (!linked) document.getElementById('hint').style.display = 'none';
+  if (!linked && lastPanel !== NL) {
+    document.getElementById('enemy').innerHTML = NL;
+    document.getElementById('ally').innerHTML = NL;
+    lastPanel = NL;
+  }
+}
+
+let lastMapDraw = 0;
+function frame() {
+  const nowT = performance.now();
+  // 地图不需要 60fps：约 11Hz 重绘即可，把 CPU 让给姿态仪
+  updateLinkUI();
+  if (nowT - lastMapDraw > 90) { drawMap(); lastMapDraw = nowT; }
+  drawPFD();
+  requestAnimationFrame(frame);
+}
+
+autoScale();
+window.addEventListener('resize', () => { autoScale(); resizeAll(); });
+window.addEventListener('orientationchange', () => setTimeout(() => { autoScale(); resizeAll(); }, 300));
+
+resizeAll();
+document.getElementById('mode').textContent = usbMode ? ('USB ' + Math.round(1000/instMs) + 'Hz') : ('WiFi ' + Math.round(1000/instMs) + 'Hz');
+requestAnimationFrame(frame);
+poll();
+instLoop();
+</script>
+</body>
+</html>
