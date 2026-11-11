@@ -45,7 +45,17 @@
               font-family:SimSun,"宋体","Songti SC",serif; font-size:clamp(16px,2.6vw,32px);
               letter-spacing:12px; color:rgba(255,255,255,.26); transform:rotate(-16deg);
               pointer-events:none; }
-  #demoMark.on { display:block; }  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  #demoMark.on { display:block; }
+  #noAtt { position:absolute; left:0; right:0; top:38%; display:none; text-align:center;
+           font-size:12px; letter-spacing:2px; color:rgba(255,180,120,.85);
+           background:rgba(30,16,8,.55); padding:3px 0; pointer-events:none; }
+  #noAtt.on { display:block; }
+  #estTag { position:absolute; right:6px; top:6px; display:none; padding:3px 9px; border-radius:5px;
+            font:bold 16px system-ui; letter-spacing:2px; color:#39ff14;
+            text-shadow:0 0 6px rgba(57,255,20,.8);
+            background:rgba(6,20,6,.8); border:1px solid rgba(57,255,20,.5); pointer-events:none; }
+  #estTag.on { display:block; }
+  #estTag.low { color:#ffd24f; border-color:rgba(255,210,79,.55); text-shadow:0 0 6px rgba(255,210,79,.7); }  #hint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
           text-align:center; font-size:12px; color:#7f9a7a; pointer-events:none; }
 
   /* 右列：敌 / 友 */
@@ -92,6 +102,8 @@
     </div>
     <div id="adiWrap"><canvas id="adi"></canvas>
       <div id="demoMark">演示模式</div>
+      <div id="noAtt">本机无姿态数据</div>
+      <div id="estTag">EST</div>
       <div id="calA" class="cal">
         <div class="calrow"><span>俯仰</span><button data-cal="p-">−</button><button data-cal="p+">+</button></div>
         <div class="calrow"><span>滚转</span><button data-cal="r-">−</button><button data-cal="r+">+</button></div>
@@ -126,9 +138,9 @@ const adiCv = $('adi'), actx = adiCv.getContext('2d');
 const NUM = (v, d) => (typeof v === 'number' && isFinite(v)) ? v : d;
 const TYPEMAP = {
   fighter:'战斗机', assault:'攻击机', bomber:'轰炸机', heli:'直升机', helicopter:'直升机',
-  artillery:'火炮', tank:'坦克', spaa:'防空车', aaa:'高炮', ship:'舰船', boat:'舰船',
-  player:'自己', none:'未知', mediumtank:'中坦', heavytank:'重坦', lighttank:'轻坦',
-  ifv:'步战车', wheeled:'轮式', sam:'防空导弹', frigate:'护卫舰', missiledestroyer:'导弹驱逐舰'
+  artillery:'火炮', tank:'坦克', aaa:'高炮', ship:'舰船', boat:'舰船',
+  player:'自己', none:'未知', mediumtank:'中坦', heavytank:'重坦', lighttank:'轻坦', tankdestroyer:'坦歼',
+  ifv:'步战', wheeled:'轮式', sam:'导弹', spaa:'防空', frigate:'护卫舰', missiledestroyer:'导驱', destroyer:'驱逐舰', lightcruiser:'轻巡', heavycruiser:'重巡', battleship:'战列舰'
 };
 
 let cal = { pOff: 0, rOff: 0, rScale: 1, mox: 0, moy: 0 };
@@ -142,7 +154,7 @@ let bg = null, bgReady = false, bgLoaded = false, lastBgTry = 0;
 let zp = 1, lastPanel = '', lastFeed = '', maxDmgId = 0, lastZones = null;
 let failSince = 0, lastReload = 0, paused = false, pollMs = 100;
 let lastInfoAt = 0, lastHudAt = 0, lastStateAt = 0, lastIndAt = 0;
-let st8 = null, ind8 = null, haveData = false, lastStat = '', demoOn = true, inBattle = false, linked = false;
+let st8 = null, ind8 = null, haveData = false, lastStat = '', demoOn = true, inBattle = false, linked = false, hasAtt = true;
 let smp = { p: 0, r: 0, h: 0, t: 0, a: 0, init: false, last: 0 };
 const usbMode = location.hostname === '127.0.0.1' || location.hostname === 'localhost';
 const forceOffline = new URLSearchParams(location.search).get('offline') === '1';
@@ -190,17 +202,19 @@ function posOf(v) {
 }
 
 function kindOf(v) {
-  const s = ((v.type || '') + ' ' + (v.icon || '')).toLowerCase();
+  const ic = (v.icon || '').toLowerCase();
+  const s  = ((v.type || '') + ' ' + (v.icon || '')).toLowerCase();
   if (s.includes('airfield')) return 'airfield';
-  if (s.includes('player')) return 'self';
+  if (ic === 'player' || s.includes('player')) return 'self';
   if (s.includes('bombing') || s.includes('bomb_point') || s.includes('bomb_target')) return 'bomb';
-  if (/capture|cap_zone|capture_zone/.test(s)) return 'cap';
-  if (/bomb|rocket|torp|missile|shell|projectile/.test(s)) return 'ammo';
+  if (/capture|cap_zone/.test(s)) return 'cap';
   if (s.includes('defending')) return 'defend';
   if (s.includes('respawn')) return 'respawn';
-  if (/fighter|bomber|assault|aircraft|heli|uav/.test(s)) return 'air';
-  if (/ship|boat|frigate|destroyer|cruiser/.test(s)) return 'ship';
-  if (/ground|tank|car|aaa|artillery|spaa|spg|ifv|wheeled|sam/.test(s)) return 'ground';
+  if (/fighter|bomber|assault|aircraft|heli|uav/.test(ic)) return 'air';
+  if (/mediumtank|lighttank|heavytank|tankdestroyer|ifv|wheeled|spaa|sam|artillery|aaa|spg|tank/.test(ic)) return 'ground';
+  if (/ship|boat|frigate|destroyer|cruiser/.test(ic)) return 'ship';
+  if (/bomb|rocket|torp|missile|shell|projectile/.test(ic)) return 'ammo';
+  if (/ground|tank/.test(s)) return 'ground';
   return 'other';
 }
 function colorOf(v) {
@@ -283,6 +297,95 @@ function dot(g, p, r, color, ring) {
   }
 }
 
+/* 单位图标：飞机=细长菱形，坦克=方块，舰船=船形 */
+function dirOf(v) {
+  const dx = NUM(v.dx, NaN), dy = NUM(v.dy, NaN);
+  if (!isFinite(dx) || !isFinite(dy) || (!dx && !dy)) return null;
+  const sx = dx, sy = flipY ? -dy : dy;
+  return Math.atan2(sx, -sy);          // 0 = 朝上
+}
+
+function shapeAir(g, p, color, v) {
+  const px = GX(g, p.x), py = GY(g, p.y);
+  const a = dirOf(v);
+  mctx.save(); mctx.translate(px, py);
+  if (a !== null) mctx.rotate(a);
+  mctx.beginPath();
+  mctx.moveTo(0, -9);
+  mctx.lineTo(4.2, 0);
+  mctx.lineTo(0, 9);
+  mctx.lineTo(-4.2, 0);
+  mctx.closePath();
+  mctx.fillStyle = color; mctx.fill();
+  mctx.lineWidth = 1.2; mctx.strokeStyle = 'rgba(0,0,0,.85)'; mctx.stroke();
+  mctx.restore();
+}
+
+function shapeGround(g, p, color, v) {
+  const px = GX(g, p.x), py = GY(g, p.y);
+  const s = 3.6;
+  mctx.beginPath();
+  mctx.rect(px - s, py - s, s * 2, s * 2);
+  mctx.fillStyle = color; mctx.fill();
+  mctx.lineWidth = 1.2; mctx.strokeStyle = 'rgba(0,0,0,.85)'; mctx.stroke();
+  const a = dirOf(v);
+  if (a !== null) {
+    mctx.beginPath();
+    mctx.moveTo(px + Math.sin(a) * 4.6, py - Math.cos(a) * 4.6);
+    mctx.lineTo(px + Math.sin(a) * 9.0, py - Math.cos(a) * 9.0);
+    mctx.strokeStyle = color; mctx.lineWidth = 1.6; mctx.stroke();
+  }
+  const label = typeName(v);
+  if (label && label !== '未知' && label !== 'none') {
+    mctx.font = '9px system-ui';
+    mctx.textAlign = 'left'; mctx.textBaseline = 'middle';
+    mctx.lineWidth = 3; mctx.strokeStyle = 'rgba(0,0,0,.9)';
+    mctx.strokeText(label, px + s + 3.5, py);
+    mctx.fillStyle = color;
+    mctx.fillText(label, px + s + 3.5, py);
+  }
+}
+
+function shapeShip(g, p, color, v) {
+  const px = GX(g, p.x), py = GY(g, p.y);
+  const a = dirOf(v);
+  mctx.save(); mctx.translate(px, py);
+  if (a !== null) mctx.rotate(a);
+  mctx.beginPath();
+  mctx.moveTo(0, -10);
+  mctx.lineTo(3.6, -4.8);
+  mctx.lineTo(3.6, 7);
+  mctx.lineTo(-3.6, 7);
+  mctx.lineTo(-3.6, -4.8);
+  mctx.closePath();
+  mctx.fillStyle = color; mctx.fill();
+  mctx.lineWidth = 1.2; mctx.strokeStyle = 'rgba(0,0,0,.85)'; mctx.stroke();
+  mctx.restore();
+}
+
+let selfHist = [];
+let shipSpd = NaN;
+function pushSelfPos(p) {
+  const t = performance.now() / 1000;
+  selfHist.push({ x: p.x, y: p.y, t: t });
+  while (selfHist.length > 60) selfHist.shift();
+}
+function derivedSpeedKmh() {
+  if (selfHist.length < 2) return NaN;
+  const now = selfHist[selfHist.length - 1];
+  let old = null;
+  for (let i = selfHist.length - 1; i >= 0; i--) {
+    if (now.t - selfHist[i].t >= 0.9) { old = selfHist[i]; break; }
+  }
+  if (!old) return NaN;
+  const dt = now.t - old.t;
+  if (dt <= 0.05) return NaN;
+  const span = mapInfo && mapInfo.map_max && mapInfo.map_min
+    ? Math.abs(mapInfo.map_max[0] - mapInfo.map_min[0]) : 4096;
+  const dx = (now.x - old.x) * span;
+  const dy = (now.y - old.y) * span;
+  return Math.sqrt(dx * dx + dy * dy) / dt * 3.6;
+}
 function drawMap() {
   if (follow) {
     const me = items.find(v => kindOf(v) === 'self');
@@ -354,8 +457,9 @@ function drawMap() {
 
     if (k === 'respawn') continue;
     if (k === 'ammo') { dot(g, p, 2.3, '#ffe36b', false); continue; }
-    if (k === 'air') { dot(g, p, 5, colorOf(v), true); continue; }
-    if (k === 'ship') { dot(g, p, 6, colorOf(v), true); continue; }
+    if (k === 'air') { shapeAir(g, p, colorOf(v), v); continue; }
+    if (k === 'ship') { shapeShip(g, p, colorOf(v), v); continue; }
+    if (k === 'ground') { shapeGround(g, p, colorOf(v), v); continue; }
     dot(g, p, 3.2, colorOf(v), false);
   }
   mctx.restore();
@@ -369,6 +473,7 @@ function drawMap() {
         const dx = NUM(me.dx, 0), dy = NUM(me.dy, 0);
         if (dx || dy) hdg2 = ((Math.atan2(dx, flipY ? dy : -dy) * 180 / Math.PI) + 360) % 360;
       }
+      pushSelfPos(p);
       if (isFinite(hdg2)) drawSelfArrow(p, hdg2); else dot(g, p, 6, '#fff', true);
     }
   }
@@ -487,8 +592,393 @@ function drawHeading(y, h, hdg) {
   actx.restore();
 }
 
+/* ---------------- 坦克 / 舰船仪表 ---------------- */
+
+function uiPill(x, y, w, h, text, on, color) {
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(x, y, w, h, 5); else actx.rect(x, y, w, h);
+  actx.fillStyle = on ? 'rgba(30,60,42,.92)' : 'rgba(18,24,20,.75)';
+  actx.fill();
+  actx.strokeStyle = on ? color : 'rgba(120,150,130,.35)';
+  actx.lineWidth = 1.5; actx.stroke();
+  actx.fillStyle = on ? color : 'rgba(150,175,160,.6)';
+  actx.font = 'bold 13px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText(text, x + w / 2, y + h / 2 + 0.5);
+}
+
+function uiDial(cx, cy, r, val, max, label, unit, hot) {
+  const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
+  actx.beginPath(); actx.arc(cx, cy, r, a0, a1);
+  actx.strokeStyle = 'rgba(120,170,135,.30)'; actx.lineWidth = 3; actx.stroke();
+
+  const steps = 5;
+  for (let i = 0; i <= steps; i++) {
+    const ang = a0 + (a1 - a0) * i / steps;
+    const c = Math.cos(ang), s = Math.sin(ang);
+    actx.beginPath();
+    actx.moveTo(cx + c * r, cy + s * r);
+    actx.lineTo(cx + c * (r - 8), cy + s * (r - 8));
+    actx.strokeStyle = 'rgba(200,230,200,.55)'; actx.lineWidth = 1.4; actx.stroke();
+    actx.fillStyle = 'rgba(190,220,195,.65)'; actx.font = '9px system-ui';
+    actx.textAlign = 'center'; actx.textBaseline = 'middle';
+    actx.fillText(String(Math.round(max * i / steps)), cx + c * (r - 19), cy + s * (r - 19));
+  }
+
+  const k = Math.max(0, Math.min(1, val / max));
+  const ang = a0 + (a1 - a0) * k;
+  actx.beginPath(); actx.moveTo(cx, cy);
+  actx.lineTo(cx + Math.cos(ang) * r * 0.84, cy + Math.sin(ang) * r * 0.84);
+  actx.strokeStyle = hot ? '#ffd24f' : '#9fe08a'; actx.lineWidth = 3;
+  actx.lineCap = 'round'; actx.stroke(); actx.lineCap = 'butt';
+  actx.beginPath(); actx.arc(cx, cy, 3.2, 0, 7);
+  actx.fillStyle = '#ffffff'; actx.fill();
+
+  actx.fillStyle = hot ? '#ffd24f' : '#eafff0';
+  actx.font = 'bold 30px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText(String(Math.round(val)), cx, cy + r * 0.42);
+  actx.font = '10px system-ui'; actx.fillStyle = 'rgba(190,220,195,.7)';
+  actx.fillText(unit, cx, cy + r * 0.42 + 20);
+  actx.font = 'bold 10px system-ui'; actx.fillStyle = 'rgba(160,200,170,.8)';
+  actx.fillText(label, cx, cy - r * 0.30);
+}
+
+function uiGauge(cx, cy, r, val, vmin, vmax, label, unit, pctText, signed, zeroMark) {
+  const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
+  const ang = v => a0 + (a1 - a0) * ((v - vmin) / (vmax - vmin));
+
+  actx.beginPath(); actx.arc(cx, cy, r, a0, a1);
+  actx.strokeStyle = 'rgba(120,170,135,.28)'; actx.lineWidth = 3; actx.stroke();
+
+  // 负值区（倒车）红色弧
+  if (vmin < 0) {
+    actx.beginPath(); actx.arc(cx, cy, r, ang(vmin), ang(0));
+    actx.strokeStyle = 'rgba(255,90,80,.55)'; actx.lineWidth = 3; actx.stroke();
+  }
+
+  const steps = 5;
+  for (let i = 0; i <= steps; i++) {
+    const v = vmin + (vmax - vmin) * i / steps;
+    const aa = ang(v);
+    const c = Math.cos(aa), s = Math.sin(aa);
+    const isZero = zeroMark && Math.abs(v) < 0.001;
+    actx.beginPath();
+    actx.moveTo(cx + c * r, cy + s * r);
+    actx.lineTo(cx + c * (r - (isZero ? 12 : 8)), cy + s * (r - (isZero ? 12 : 8)));
+    actx.strokeStyle = isZero ? '#ff5a50' : 'rgba(200,230,200,.55)';
+    actx.lineWidth = isZero ? 2.5 : 1.4; actx.stroke();
+    actx.fillStyle = isZero ? '#ff8a80' : 'rgba(190,220,195,.65)';
+    actx.font = (isZero ? 'bold 11px' : '9px') + ' system-ui';
+    actx.textAlign = 'center'; actx.textBaseline = 'middle';
+    actx.fillText(String(Math.round(v)), cx + c * (r - 21), cy + s * (r - 21));
+  }
+
+  const k = Math.max(0, Math.min(1, (val - vmin) / (vmax - vmin)));
+  const aa = a0 + (a1 - a0) * k;
+  actx.beginPath(); actx.moveTo(cx, cy);
+  actx.lineTo(cx + Math.cos(aa) * r * 0.82, cy + Math.sin(aa) * r * 0.82);
+  actx.strokeStyle = val < 0 ? '#ff6b5f' : '#ffd24f';
+  actx.lineWidth = 3.2; actx.lineCap = 'round'; actx.stroke(); actx.lineCap = 'butt';
+  actx.beginPath(); actx.arc(cx, cy, 3.2, 0, 7); actx.fillStyle = '#fff'; actx.fill();
+
+  actx.fillStyle = val < 0 ? '#ff8a80' : '#ffd24f';
+  actx.font = 'bold 26px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText((signed && val > 0 ? '+' : '') + String(Math.round(val)), cx, cy + r * 0.44);
+  actx.font = '9px system-ui'; actx.fillStyle = 'rgba(190,220,195,.7)';
+  actx.fillText(unit, cx, cy + r * 0.44 + 17);
+  if (pctText) {
+    actx.fillStyle = 'rgba(255,210,79,.85)'; actx.font = 'bold 10px system-ui';
+    actx.fillText(pctText, cx, cy + r * 0.44 + 31);
+  }
+  actx.font = 'bold 10px system-ui'; actx.fillStyle = 'rgba(160,200,170,.8)';
+  actx.fillText(label, cx, cy - r * 0.30);
+}
+
+function drawShellIcon(cx, cy, h, color) {
+  const w = h * 0.34;
+  actx.save();
+  actx.translate(cx, cy);
+  actx.beginPath();
+  actx.moveTo(0, -h / 2);
+  actx.lineTo(w, -h / 2 + h * 0.28);
+  actx.lineTo(w, h / 2);
+  actx.lineTo(-w, h / 2);
+  actx.lineTo(-w, -h / 2 + h * 0.28);
+  actx.closePath();
+  actx.fillStyle = color; actx.fill();
+  actx.lineWidth = 1.2; actx.strokeStyle = 'rgba(0,0,0,.6)'; actx.stroke();
+  actx.beginPath();
+  actx.moveTo(-w, -h / 2 + h * 0.28);
+  actx.lineTo(w, -h / 2 + h * 0.28);
+  actx.strokeStyle = 'rgba(0,0,0,.35)'; actx.stroke();
+  actx.restore();
+}
+
+/* ---------------- 姿态估算（AHRS EST）----------------
+   真姿态缺失时，用 /state 推算：
+   俯仰 = 航迹倾角 γ + 迎角 AoA
+   坡度 = atan(TAS × 航向变化率 / g)
+   --------------------------------------------------- */
+let estActive = false, estConfNow = 1, estRollNow = 0, lastAttTs = 0, holdP = 0, holdR = 0;
+let hdgHist = [];          // 航向历史 {t, h}
+let estPitch = 0, estRoll = 0, estConf = 0;
+
+function wrap180(a) {
+  return ((a + 540) % 360) - 180;
+}
+
+function updateEstimate(tasKmh, vyMs, aoaDeg, gLoad, hdgDeg, wxDeg, dtSec) {
+  const tas = Math.max(1, tasKmh / 3.6);              // m/s
+  // ---- 俯仰：γ + AoA ----
+  let ratio = vyMs / tas;
+  if (ratio > 1) ratio = 1; else if (ratio < -1) ratio = -1;
+  const gamma = Math.asin(ratio) * 57.2958;
+  const rawPitch = gamma + aoaDeg;
+  // ---- 坡度：协调转弯 ----
+  const now = performance.now() / 1000;
+  if (isFinite(hdgDeg)) {
+    hdgHist.push({ t: now, h: hdgDeg });
+    while (hdgHist.length > 40) hdgHist.shift();
+  }
+  let roll = NaN;
+  if (hdgHist.length >= 3) {
+    const newest = hdgHist[hdgHist.length - 1];
+    let old = null;
+    for (let i = hdgHist.length - 1; i >= 0; i--) {
+      if (newest.t - hdgHist[i].t >= 1.4) { old = hdgHist[i]; break; }
+    }
+    if (old) {
+      const dth = newest.t - old.t;
+      if (dth > 0.5) {
+        let dh = wrap180(newest.h - old.h);
+        const rateDeg = dh / dth;                       // deg/s
+        const rateRad = rateDeg * Math.PI / 180;
+        roll = Math.atan(tas * rateRad / 9.80665) * 57.2958;
+      }
+    }
+  }
+  // 没有罗盘：积分滚转角速度
+  if (!isFinite(roll) && isFinite(wxDeg)) {
+    estRoll += wxDeg * dtSec;
+    estRoll *= (1 - dtSec * 0.25);                      // 缓慢回正
+  } else if (isFinite(roll)) {
+    estRoll = roll;
+  }
+  if (!isFinite(estRoll)) estRoll = 0;
+  if (estRoll > 80) estRoll = 80;
+  if (estRoll < -80) estRoll = -80;
+  if (Math.abs(estRoll) < 6) estRoll = 0;
+
+  // 平滑
+  estPitch += (rawPitch - estPitch) * Math.min(1, dtSec * 4);
+  // 置信度：大机动时降低
+  estConf = Math.abs(gLoad - 1) > 4 ? 0.35 : 1;
+  return { pitch: estPitch, roll: estRoll, conf: estConf };
+}
+
+function drawTankPanel(W, H) {
+  const ind = ind8 || {};
+  const spd    = NUM(ind.speed, 0);
+  const rpm    = NUM(ind.rpm, 0);
+  const gear   = NUM(ind.gear, 0);
+  const gneut  = NUM(ind.gear_neutral, 0);
+  const ammo   = NUM(ind.first_stage_ammo, 0);
+  const crew   = NUM(ind.crew_current, 0);
+  const crewT  = NUM(ind.crew_total, 0);
+  const stab   = NUM(ind.stabilizer, 0);
+  const ircm   = NUM(ind.ircm, 0);
+  const lws    = NUM(ind.lws, 0);
+  const warn   = NUM(ind.has_speed_warning, 0);
+
+  // ---- 顶部设备状态（加大）----
+  const ph = 24, py = 6, gap = 5;
+  let px = 7, row = 0;
+  const items = [
+    ['稳定', stab === 1, '#9fe08a', 50],
+    ['红外', ircm === 1, '#9fe08a', 50],
+    ['激光', lws === 1, '#ff6b6b', 50],
+    ['超速', warn === 1, '#ff6b6b', 50],
+    ['乘 ' + crew + '/' + crewT, crew >= crewT, '#cfe8c8', 72]
+  ];
+  for (let i = 0; i < items.length; i++) {
+    const t = items[i];
+    if (px + t[3] > W - 7) { px = 7; row++; }
+    uiPill(px, py + row * (ph + gap), t[3], ph, t[0], t[1], t[2]);
+    px += t[3] + gap;
+  }
+  const topH = py + (row + 1) * (ph + gap) + 4;
+
+  // ---- 左侧：速度 / 转速 一列 ----
+  const leftW = W * 0.585;
+  const r = Math.min(leftW * 0.44, (H - topH - 14) * 0.215);
+  const cx = leftW * 0.52;
+  const y1 = topH + r * 1.06;
+  const y2 = topH + r * 3.22;
+
+  uiGauge(cx, y1, r, spd, -20, 80, '速度', 'km/h', null, true, true);
+  const pct = Math.max(0, Math.min(999, Math.round(rpm / 3000 * 100)));
+  uiGauge(cx, y2, r, rpm, 0, 3000, '转速', 'RPM', pct + '%', false, false);
+
+  // ---- 右侧：上=待发弹，下=挡位 ----
+  const rx = leftW + 6;
+  const rw = W - rx - 7;
+
+  // 待发弹（上）
+  const ah = Math.max(96, (H - topH) * 0.46);
+  const ay = topH;
+  actx.beginPath();
+  if (actx.roundRect) actx.roundRect(rx, ay, rw, ah, 6); else actx.rect(rx, ay, rw, ah);
+  actx.fillStyle = 'rgba(10,14,11,.95)'; actx.fill();
+  actx.strokeStyle = 'rgba(255,210,79,.6)'; actx.lineWidth = 2; actx.stroke();
+
+  actx.fillStyle = 'rgba(255,210,79,.85)'; actx.font = 'bold 11px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'top';
+  actx.fillText('待发弹', rx + rw / 2, ay + 7);
+
+  drawShellIcon(rx + rw / 2, ay + ah * 0.40, Math.min(rw * 0.40, ah * 0.26), '#ffd24f');
+
+  const numFont = Math.round(Math.min(rw * 0.46, ah * 0.30));
+  const unitFont = Math.round(numFont * 0.34);
+  const numStr = String(Math.round(ammo));
+  actx.font = 'bold ' + numFont + 'px system-ui';
+  const nw = actx.measureText(numStr).width;
+  actx.font = 'bold ' + unitFont + 'px system-ui';
+  const uw = actx.measureText('发').width;
+  const totalW = nw + 5 + uw;
+  const startX = rx + rw / 2 - totalW / 2;
+  const baseY = ay + ah * 0.80;
+
+  actx.font = 'bold ' + numFont + 'px system-ui';
+  actx.fillStyle = '#ffd24f';
+  actx.textAlign = 'left'; actx.textBaseline = 'middle';
+  actx.fillText(numStr, startX, baseY);
+  actx.font = 'bold ' + unitFont + 'px system-ui';
+  actx.fillStyle = 'rgba(255,210,79,.9)';
+  actx.fillText('发', startX + nw + 5, baseY + numFont * 0.12);
+
+  // 挡位（下）
+  const gy0 = ay + ah + 8;
+  const gh = Math.min(30, (H - gy0 - 12) / 3 - 4);
+  let cur;
+  if (Math.abs(spd) > 0.5 && spd < 0) cur = 'R';
+  else if (Math.abs(gear - gneut) < 0.01 && Math.abs(spd) <= 0.5) cur = 'N';
+  else cur = String(Math.round(gear));
+  const fwd = (cur === 'R' || cur === 'N') ? 'D' : cur;
+  const labels = [fwd, 'N', 'R'];
+
+  actx.font = 'bold 10px system-ui'; actx.fillStyle = 'rgba(160,200,170,.7)';
+  actx.textAlign = 'center'; actx.textBaseline = 'top';
+  actx.fillText('挡位', rx + rw / 2, gy0);
+  for (let i = 0; i < 3; i++) {
+    const yy = gy0 + 15 + i * (gh + 4);
+    const on = (i === 2 && cur === 'R') || (i === 1 && cur === 'N') || (i === 0 && cur !== 'R' && cur !== 'N');
+    actx.beginPath();
+    if (actx.roundRect) actx.roundRect(rx, yy, rw, gh, 5); else actx.rect(rx, yy, rw, gh);
+    actx.fillStyle = on ? 'rgba(255,210,79,.92)' : 'rgba(12,18,14,.9)';
+    actx.fill();
+    actx.strokeStyle = on ? '#ffd24f' : 'rgba(120,150,130,.4)';
+    actx.lineWidth = on ? 2 : 1.2; actx.stroke();
+    actx.fillStyle = on ? '#10160f' : 'rgba(170,200,175,.75)';
+    actx.font = 'bold ' + Math.round(gh * 0.62) + 'px system-ui';
+    actx.textAlign = 'center'; actx.textBaseline = 'middle';
+    actx.fillText(labels[i], rx + rw / 2, yy + gh / 2 + 1);
+  }
+}
+
+function drawShipPanel(W, H) {
+  const ind = ind8 || {};
+  let hdg = NUM(ind.compass !== undefined ? ind.compass : ind.compass1, NaN);
+  if (!isFinite(hdg)) {
+    const me = items.find(v => (v.icon || '').toLowerCase() === 'player');
+    if (me && (me.dx || me.dy)) {
+      const sx = Number(me.dx) || 0, sy0 = Number(me.dy) || 0;
+      const sy = flipY ? -sy0 : sy0;
+      hdg = ((Math.atan2(sx, -sy) * 180 / Math.PI) + 360) % 360;
+    }
+  }
+  const cx = W / 2, cy = H * 0.42;
+  const r = Math.min(W * 0.44, H * 0.26);
+
+  // 旋转的方位盘
+  actx.save();
+  actx.translate(cx, cy);
+  if (isFinite(hdg)) actx.rotate(-hdg * Math.PI / 180);
+  actx.beginPath(); actx.arc(0, 0, r, 0, 7);
+  actx.strokeStyle = 'rgba(150,200,165,.35)'; actx.lineWidth = 1.6; actx.stroke();
+  for (let d = 0; d < 360; d += 10) {
+    const a = (d - 90) * Math.PI / 180;
+    const len = (d % 30 === 0) ? 10 : 5;
+    actx.beginPath();
+    actx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    actx.lineTo(Math.cos(a) * (r - len), Math.sin(a) * (r - len));
+    actx.strokeStyle = 'rgba(180,220,190,.45)'; actx.lineWidth = 1.2; actx.stroke();
+  }
+  actx.fillStyle = 'rgba(225,242,230,.9)'; actx.font = 'bold 14px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  const marks = [['N', 0], ['E', 90], ['S', 180], ['W', 270]];
+  for (let i = 0; i < marks.length; i++) {
+    const a = (marks[i][1] - 90) * Math.PI / 180;
+    actx.fillText(marks[i][0], Math.cos(a) * (r - 27), Math.sin(a) * (r - 27));
+  }
+  actx.restore();
+
+  // 固定船体（铅笔形）
+  actx.save();
+  actx.translate(cx, cy);
+  actx.beginPath();
+  actx.moveTo(0, -r * 0.60);
+  actx.lineTo(r * 0.15, -r * 0.16);
+  actx.lineTo(r * 0.15, r * 0.44);
+  actx.lineTo(-r * 0.15, r * 0.44);
+  actx.lineTo(-r * 0.15, -r * 0.16);
+  actx.closePath();
+  actx.fillStyle = 'rgba(232,246,236,.94)'; actx.fill();
+  actx.lineWidth = 1.6; actx.strokeStyle = 'rgba(0,0,0,.65)'; actx.stroke();
+  actx.restore();
+
+  // 固定指针
+  actx.beginPath();
+  actx.moveTo(cx, cy - r - 2);
+  actx.lineTo(cx - 6, cy - r - 13);
+  actx.lineTo(cx + 6, cy - r - 13);
+  actx.closePath();
+  actx.fillStyle = '#ffd24f'; actx.fill();
+
+  actx.fillStyle = '#ffd24f'; actx.font = 'bold 28px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText(isFinite(hdg) ? (String(Math.round(hdg)).padStart(3, '0') + '°') : '---', cx, cy + r + 36);
+
+  actx.fillStyle = 'rgba(190,220,195,.6)'; actx.font = '10px system-ui';
+  actx.fillText('航向', cx, cy + r + 56);
+
+  // 速度：接口不提供
+  actx.fillStyle = 'rgba(255,140,120,.85)';
+  actx.font = 'bold 20px system-ui';
+  actx.textAlign = 'center'; actx.textBaseline = 'middle';
+  actx.fillText('无法读取速度', cx, cy + r + 96);
+  actx.fillStyle = 'rgba(160,185,170,.55)'; actx.font = '10px system-ui';
+  actx.fillText('游戏未开放舰船遥测接口', cx, cy + r + 120);
+}
+
 function drawPFD() {
-  const W = adiCv.clientWidth, H = adiCv.clientHeight;
+  const W0 = adiCv.clientWidth, H0 = adiCv.clientHeight;
+  const isTank = !!(ind8 && ind8.army === 'tank');
+  const isShip = !isTank && !haveData && inBattle && ind8 && ind8.valid === false;
+  if (isTank) {
+    actx.clearRect(0, 0, W0, H0);
+    actx.fillStyle = '#070a08'; actx.fillRect(0, 0, W0, H0);
+    drawTankPanel(W0, H0);
+    return;
+  }
+  if (isShip) {
+    actx.clearRect(0, 0, W0, H0);
+    actx.fillStyle = '#070a08'; actx.fillRect(0, 0, W0, H0);
+    drawShipPanel(W0, H0);
+    return;
+  }
+  const W = W0, H = H0;
   actx.clearRect(0, 0, W, H);
   actx.fillStyle = '#070a08'; actx.fillRect(0, 0, W, H);
 
@@ -521,9 +1011,39 @@ function drawPFD() {
     thr = Math.max(NUM(st8 && st8['throttle 1, %'], 0), NUM(st8 && st8['throttle 2, %'], 0));
     g = NUM(st8 && st8['Ny'], 0);
     vy = NUM(st8 && st8['Vy, m/s'], 0);
-    pitch = -(NUM(ind8 && ind8.aviahorizon_pitch, 0) * cal.rScale) + cal.pOff;
-    roll = -(NUM(ind8 && (ind8.aviahorizon_roll !== undefined ? ind8.aviahorizon_roll : ind8.bank), 0) * cal.rScale) + cal.rOff;
     hdg = NUM(ind8 && (ind8.compass !== undefined ? ind8.compass : ind8.compass1), 0);
+    hasAtt = !!(ind8 && (ind8.aviahorizon_pitch !== undefined || ind8.aviahorizon_roll !== undefined || ind8.bank !== undefined));
+    const nowAtt = performance.now();
+    if (hasAtt) {
+      pitch = -(NUM(ind8.aviahorizon_pitch, 0) * cal.rScale) + cal.pOff;
+      roll = -(NUM(ind8 && (ind8.aviahorizon_roll !== undefined ? ind8.aviahorizon_roll : ind8.bank), 0) * cal.rScale) + cal.rOff;
+      lastAttTs = nowAtt; holdP = pitch; holdR = roll;
+      estActive = false;
+    } else if (lastAttTs && (nowAtt - lastAttTs) < 2000) {
+      // 切换载具/瞬时丢包：保持上一帧，不闪 EST
+      pitch = holdP; roll = holdR; estActive = false;
+    } else if (st8 && st8.valid) {
+      // 没有真姿态：用估算
+      const e = updateEstimate(
+        NUM(st8['TAS, km/h'], 0),
+        NUM(st8['Vy, m/s'], 0),
+        NUM(st8['AoA, deg'], 0),
+        NUM(st8['Ny'], 1),
+        hdg,
+        NUM(st8['Wx, deg/s'], 0),
+        0.1
+      );
+      pitch = e.pitch + cal.pOff;
+      roll = e.roll + cal.rOff;
+      estActive = true;
+      estConfNow = e.conf;
+      estRollNow = e.roll;
+    } else {
+      // 连 state 都没有：保持上一帧
+      pitch = smp.init ? smp.p : 0;
+      roll = smp.init ? smp.r : 0;
+      estActive = false;
+    }
   }
   if (flipPitch) pitch = -pitch;
   if (flipRoll) roll = -roll;
@@ -563,7 +1083,7 @@ function drawPFD() {
   const cx = adiX + adiW / 2, cy = adiY + adiH / 2;
   const R = Math.min(adiW, adiH) / 2;
   const ppd = (adiH / 2) / 60;
-  const rad = -roll * Math.PI / 180;
+  const estOn = !!estActive;  const rad = estOn ? 0 : (-roll * Math.PI / 180);
 
   actx.save();
   actx.beginPath();
@@ -578,13 +1098,14 @@ function drawPFD() {
   actx.translate(0, off);
 
   const big = R * 3;
-  actx.fillStyle = '#1f6ad0';
-  actx.fillRect(-big, -big, big * 2, big);
-  actx.fillStyle = '#8a5a1c';
-  actx.fillRect(-big, 0, big * 2, big);
-
-  actx.strokeStyle = '#ffffff'; actx.lineWidth = 2.6;
-  actx.beginPath(); actx.moveTo(-big, 0); actx.lineTo(big, 0); actx.stroke();
+  if (!estOn) {
+    actx.fillStyle = '#1f6ad0';
+    actx.fillRect(-big, -big, big * 2, big);
+    actx.fillStyle = '#8a5a1c';
+    actx.fillRect(-big, 0, big * 2, big);
+    actx.strokeStyle = '#ffffff'; actx.lineWidth = 2.6;
+    actx.beginPath(); actx.moveTo(-big, 0); actx.lineTo(big, 0); actx.stroke();
+  }
 
   actx.font = 'bold ' + Math.max(9, Math.round(R * 0.075)) + 'px system-ui';
   actx.textAlign = 'center'; actx.textBaseline = 'middle';
@@ -595,14 +1116,14 @@ function drawPFD() {
     const major = (p % 10 === 0);
     const halfLen = major ? R * 0.40 : R * 0.18;
     const gap = R * 0.075;
-    actx.strokeStyle = 'rgba(255,255,255,.95)';
+    actx.strokeStyle = estOn ? 'rgba(57,255,20,.92)' : 'rgba(255,255,255,.95)';
     actx.lineWidth = major ? 2 : 1.4;
     actx.beginPath();
     actx.moveTo(-halfLen, yy); actx.lineTo(-gap, yy);
     actx.moveTo(gap, yy); actx.lineTo(halfLen, yy);
     actx.stroke();
     if (major) {
-      actx.fillStyle = '#fff';
+      actx.fillStyle = estOn ? '#39ff14' : '#fff';
       actx.fillText(String(Math.abs(p)), -halfLen - 11, yy);
       actx.fillText(String(Math.abs(p)), halfLen + 11, yy);
     }
@@ -626,7 +1147,22 @@ function drawPFD() {
   actx.beginPath(); actx.arc(0, 0, 3, 0, 7); actx.fillStyle = '#111'; actx.fill();
   actx.restore();
 
+  // EST：坡度不可用，只给"带杆方向"提示
+  if (estOn && Math.abs(estRollNow) > 6) {
+    const toLeft = estRollNow < 0;   // 实测反了一次，改过来
+    const txt = '急带杆';
+    actx.save();
+    actx.translate(cx, cy + R * 0.62);
+    actx.font = 'bold ' + Math.max(16, Math.round(R * 0.14)) + 'px system-ui';
+    actx.textAlign = 'center'; actx.textBaseline = 'middle';
+    actx.fillStyle = '#39ff14';
+    actx.shadowColor = 'rgba(57,255,20,.85)'; actx.shadowBlur = 10;
+    actx.fillText((toLeft ? '← 左 ' : '右 ') + txt + (toLeft ? '' : ' →'), 0, 0);
+    actx.restore();
+  }
+
   // 滚转刻度
+  if (!estOn) {
   const rS = Math.min(adiW * 0.42, adiH * 0.30);
   const cyR = Math.max(adiY + 10 + rS, cy - adiH * 0.30);
   actx.save();
@@ -651,6 +1187,7 @@ function drawPFD() {
   actx.fillStyle = '#f5c542'; actx.fill();
   actx.lineWidth = 1.4; actx.strokeStyle = '#111'; actx.stroke();
   actx.restore();
+  }
 
   actx.restore();
 
@@ -900,6 +1437,16 @@ function updateLinkUI() {
   const wantDemo = demoOn && !haveData && !inBattle;
   if (linked !== ovLinked) { ovLinked = linked; document.getElementById('linkDown').classList.toggle('on', !linked); }
   if (wantDemo !== ovDemo) { ovDemo = wantDemo; document.getElementById('demoMark').classList.toggle('on', wantDemo); }
+  const tag = document.getElementById('estTag');
+  if (tag) {
+    const want = estActive;
+    if (tag.classList.contains('on') !== want) tag.classList.toggle('on', want);
+    tag.textContent = estConfNow < 0.6 ? 'EST?' : 'EST';
+    tag.classList.toggle('low', estConfNow < 0.6);
+  }
+  const na = !hasAtt && haveData && !estActive;
+  const naEl = document.getElementById('noAtt');
+  if (naEl && naEl.classList.contains('on') !== na) naEl.classList.toggle('on', na);
   if (!linked) document.getElementById('hint').style.display = 'none';
   if (!linked && lastPanel !== NL) {
     document.getElementById('enemy').innerHTML = NL;
